@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import CurrentUser, get_current_user
-from app.services import order_query
+from app.services import order_query, pc_client
 
 router = APIRouter()
 
@@ -22,6 +22,9 @@ class OrderListItem(BaseModel):
     status_text: str
     cust_name: str
     cust_short: str
+    recv_man: str
+    recv_call: str
+    cust_address: str
     total_qty: int
     cust_po_list: str
     cust_kuanhao_list: str
@@ -81,4 +84,22 @@ def order_detail(
     return OrderDetailResponse(
         head=head,
         details=[OrderDetailRow(**d) for d in details],
+    )
+
+
+@router.get("/{order_id}/contract")
+def order_contract(
+    order_id: int,
+    _: CurrentUser = Depends(get_current_user),
+) -> Response:
+    """代理 PC 端 khht.php?oid= 的合同预览 PDF，内联返回。"""
+    if order_id <= 0:
+        raise HTTPException(status_code=400, detail="参数错误：缺少 order_id")
+    pdf = pc_client.get_contract_pdf(order_id)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="contract_{order_id}.pdf"'
+        },
     )

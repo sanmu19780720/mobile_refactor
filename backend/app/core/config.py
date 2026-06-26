@@ -16,11 +16,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # 数据库（保持与原 config.php 一致）
-    db_host: str = "120.78.239.45"
+    # 数据库
+    db_host: str = ""
     db_port: int = 3306
-    db_name: str = "my_schema"
-    db_user: str = "root"
+    db_name: str = ""
+    db_user: str = ""
     db_pass: str = ""
 
     # JWT
@@ -31,8 +31,14 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # 本地账号 JSON：[[username, password, realname, role], ...]
-    local_users_json: str = '[["管群","Kayla2025","管群","admin"]]'
+    # PC 端 ERP（用于代理拉取合同预览 PDF：khht.php?oid=）
+    pc_base_url: str = ""
+    pc_user: str = ""
+    pc_pwd: str = ""
+
+    # 本地账号 JSON：[[username, bcrypt_hash, realname, role], ...]
+    # 密码字段支持 bcrypt 哈希（$2b$...）或明文（兼容旧格式），生产环境务必用哈希
+    local_users_json: str = "[]"
 
     @property
     def database_url(self) -> str:

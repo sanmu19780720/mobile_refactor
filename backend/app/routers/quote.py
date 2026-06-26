@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+import io
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote as urlquote
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,9 +13,50 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import CurrentUser, get_current_user
-from app.services.excel import build_quote_xlsx
+from app.services.pc_client import (
+    get_order_page_info,
+    import_batch_excel,
+    submit_luru_order,
+)
+from app.services.templates_export import build_batch_import_xlsx, build_coats_xlsx
 
 router = APIRouter()
+
+
+def _next_order_seq(db: Session) -> Tuple[str, int]:
+    """按当月 YYYYMM 计算下一个订单流水号（等价 order_input_new.php 的生成规则）。
+
+    取当月 orders_po 后 4 位的最大值 +1；当月没有则从 1 开始。
+    返回 (prefix=YYYYMM, next_seq)。
+    """
+    prefix = datetime.now().strftime("%Y%m")
+    row = db.execute(
+        text(
+            "SELECT MAX(CAST(SUBSTRING(orders_po, 7) AS UNSIGNED)) AS m "
+            "FROM orders WHERE orders_po LIKE :p"
+        ),
+        {"p": f"{prefix}%"},
+    ).mappings().first()
+    max_seq = int(row["m"]) if row and row["m"] is not None else 0
+    return prefix, max_seq + 1
+
+
+def _xlsx_response(content: bytes, base_name: str) -> StreamingResponse:
+    """返回 xlsx 下载响应。filename 含中文时用 ASCII 回退名 + RFC5987 filename*。"""
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ascii_names = {"批量导入": "batch_import", "高士下单": "coats_order"}
+    ascii_base = ascii_names.get(base_name, "export")
+    ascii_filename = f"{ascii_base}_{ts}.xlsx"
+    utf8_filename = f"{base_name}_{ts}.xlsx"
+    disposition = (
+        f"attachment; filename=\"{ascii_filename}\"; "
+        f"filename*=UTF-8''{urlquote(utf8_filename)}"
+    )
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": disposition},
+    )
 
 
 class PrepareLineRequest(BaseModel):
@@ -40,12 +82,23 @@ class QuoteLine(BaseModel):
     discount: float
     cust_yongjin_p: float
     cust_zhekou_jiajia: float
+    serial_no: Optional[int] = None
 
 
 class PrepareLineResponse(BaseModel):
     ok: bool
     message: str
     line: Optional[QuoteLine] = None
+
+
+@router.get("/next-seq")
+def get_next_seq(
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """返回当月下一个订单流水号（与 coats 导出的起始 PO 序号来源一致）。"""
+    prefix, next_seq = _next_order_seq(db)
+    return {"next_seq": int(f"{prefix}{next_seq:04d}")}
 
 
 @router.post("/prepare-line", response_model=PrepareLineResponse)
@@ -128,26 +181,109 @@ class ExportRequest(BaseModel):
     lines: List[QuoteLine]
 
 
-@router.post("/export")
-def export_excel(
+class ExportCoatsRequest(BaseModel):
+    lines: List[QuoteLine]
+    ship_to: str = ""
+    buyer: str = ""
+
+
+@router.post("/submit-to-pc")
+def submit_to_pc(
+    body: ExportRequest,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
+) -> dict:
+    """完整自动下单：按客户分组，每组执行 import→luru_order 两步，返回各组结果。"""
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="没有临时报价行，无法下单")
+
+    # 按客户分组，保持首次出现顺序
+    groups: Dict[str, List[QuoteLine]] = {}
+    for ln in body.lines:
+        groups.setdefault(ln.cust_name, []).append(ln)
+
+    results = []
+    for cust_name, group_lines in groups.items():
+        # 1. 查 cust_id
+        row_c = db.execute(
+            text("SELECT cust_id FROM customers WHERE cust_name = :n LIMIT 1"),
+            {"n": cust_name},
+        ).mappings().first()
+        if not row_c:
+            results.append({"cust_name": cust_name, "ok": False,
+                             "message": f"客户「{cust_name}」在数据库中未找到，已跳过"})
+            continue
+        cust_id = int(row_c["cust_id"])
+
+        # 2. 为每行查 item_id（DB 数字 ID）
+        line_dicts: List[Dict[str, Any]] = []
+        for ln in group_lines:
+            row_i = db.execute(
+                text("SELECT id FROM itemcode WHERE itemcode = :c LIMIT 1"),
+                {"c": ln.itemcode},
+            ).mappings().first()
+            d = ln.model_dump()
+            d["item_id_db"] = int(row_i["id"]) if row_i else 0
+            line_dicts.append(d)
+
+        # 3. 获取本次订单 order_num / order_po
+        try:
+            order_num, order_po = get_order_page_info()
+        except Exception as e:
+            results.append({"cust_name": cust_name, "ok": False, "message": f"获取订单页失败：{e}"})
+            continue
+
+        # 4. 生成并上传 Excel（存入 PHP Session）
+        xlsx_bytes = build_batch_import_xlsx(line_dicts)
+        import_result = import_batch_excel(xlsx_bytes)
+
+        # 5. 提交订单头（luru_order.php 创建真实记录）
+        submit_result = submit_luru_order(cust_id, order_num, order_po, line_dicts)
+
+        ok = "录入成功" in str(submit_result)
+        results.append({
+            "cust_name": cust_name,
+            "ok": ok,
+            "order_po": order_po,
+            "import": import_result,
+            "submit": submit_result,
+        })
+
+    return {"results": results}
+
+
+@router.post("/export-batch")
+def export_batch(
     body: ExportRequest,
     _: CurrentUser = Depends(get_current_user),
 ) -> StreamingResponse:
-    """导出 XLSX，等价 quote_order.php:82-151。"""
+    """批量导入表：套用模版逐行写入临时报价行。"""
+    if len(body.lines) == 0:
+        raise HTTPException(status_code=400, detail="没有临时报价行，无法导出")
+    lines: List[Dict[str, Any]] = [ln.model_dump() for ln in body.lines]
+    content = build_batch_import_xlsx(lines)
+    return _xlsx_response(content, "批量导入")
+
+
+@router.post("/export-coats")
+def export_coats(
+    body: ExportCoatsRequest,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(get_current_user),
+) -> StreamingResponse:
+    """高士下单表：PO No. 逐行递增（按当月流水号续号），送货日期=下单日期+5天。"""
     if len(body.lines) == 0:
         raise HTTPException(status_code=400, detail="没有临时报价行，无法导出")
 
+    prefix, start_seq = _next_order_seq(db)
+    required_date = date.today() + timedelta(days=5)
     lines: List[Dict[str, Any]] = [ln.model_dump() for ln in body.lines]
-    content = build_quote_xlsx(lines)
-
-    filename = f"quote_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    # 文件名含非 ASCII 时用 RFC 5987 编码，保证浏览器正确下载
-    disposition = f"attachment; filename=\"{filename}\"; filename*=UTF-8''{urlquote(filename)}"
-
-    import io
-
-    return StreamingResponse(
-        io.BytesIO(content),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": disposition},
+    content = build_coats_xlsx(
+        lines,
+        ship_to=body.ship_to.strip(),
+        buyer=body.buyer.strip(),
+        po_prefix=prefix,
+        start_seq=start_seq,
+        required_date=required_date,
     )
+    return _xlsx_response(content, "高士下单")

@@ -3,7 +3,8 @@ import { useAuthStore } from '@/stores/auth'
 
 const client = axios.create({
   baseURL: '/api',
-  timeout: 15000,
+  // 订单聚合查询走远程 MySQL，单次可能 ~18s，故放宽默认超时，避免误判超时
+  timeout: 60000,
 })
 
 // 请求拦截：附加 JWT

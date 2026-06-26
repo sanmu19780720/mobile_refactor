@@ -122,14 +122,14 @@
             <table class="temp-table">
               <thead>
                 <tr>
-                  <th>#</th><th>客户</th><th>客户单号</th><th>客户款号</th><th>ITEMCODE</th>
-                  <th>颜色</th><th>数量</th><th>原价</th><th>折扣</th><th>佣金方</th>
-                  <th>佣金比</th><th>客户加价</th><th>操作</th>
+                  <th>流水号</th><th>客户</th><th>客户单号</th><th>客户款号</th><th>ITEMCODE</th>
+                  <th>颜色</th><th>数量</th><th>原价</th><th>折扣</th><th>客户加价</th>
+                  <th>折后价</th><th>佣金比</th><th>操作</th>
                 </tr>
               </thead>
               <tbody>
               <tr v-for="(ln, i) in quote.lines" :key="i">
-                <td>{{ i + 1 }}</td>
+                <td>{{ serialMap(quote.lines).get(ln.cust_name) }}</td>
                 <td>{{ shortCustName(ln.cust_name) }}</td>
                 <td>{{ ln.cust_po }}</td>
                 <td>{{ ln.cust_kuanhao }}</td>
@@ -138,20 +138,96 @@
                 <td>{{ ln.qty }}</td>
                 <td>{{ ln.price.toFixed(4) }}</td>
                 <td>{{ ln.discount }}</td>
-                <td>{{ modeCode(ln.cust_yongjin_p, ln.cust_zhekou_jiajia) }}</td>
-                <td>{{ ln.cust_yongjin_p }}</td>
                 <td>{{ ln.cust_zhekou_jiajia }}</td>
+                <td>{{ finalPrice(ln).toFixed(2) }}</td>
+                <td>{{ ln.cust_yongjin_p }}</td>
                 <td><span class="icon-del" @click="quote.deleteLine(i)">🗑</span></td>
               </tr>
               </tbody>
             </table>
           </div>
 
+          <div class="qo-card">
+            <div class="qo-section-title">高士下单信息（仅高士下单表使用）</div>
+            <div class="qo-grid qo-grid-2">
+              <div class="qo-field">
+                <label>收件地址（Ship to Party）</label>
+                <input type="text" v-model="coatsForm.ship_to" placeholder="手动键入收件地址" />
+              </div>
+              <div class="qo-field">
+                <label>买家（Buyer）</label>
+                <input type="text" v-model="coatsForm.buyer" placeholder="手动键入买家" />
+              </div>
+            </div>
+            <div class="qo-field-hint">
+              客户单号（PO No.）按当月流水号逐行递增自动生成；送货日期 = 今天 + 5 天，自动填入。
+            </div>
+          </div>
+
           <div class="bottom-actions">
-            <button type="button" class="btn btn-primary" @click="exportExcel">提交订单并导出 Excel</button>
+            <button type="button" class="btn btn-primary" @click="openPreview('batch')">导出批量导入表</button>
+            <button type="button" class="btn btn-green2" @click="openPreview('coats')">导出高士下单表</button>
             <button type="button" class="btn btn-danger" @click="clearTemp">清空临时列表</button>
           </div>
         </template>
+      </div>
+
+      <!-- 预览弹层 -->
+      <div v-if="showPreview" class="preview-overlay">
+        <div class="preview-dialog">
+          <div class="preview-title">
+            导出预览 — 可直接修改表格内容后再导出
+            <span class="preview-hint">（修改仅作用于本次导出，不会更新临时列表）</span>
+          </div>
+          <div class="preview-scroll">
+            <table class="preview-table">
+              <thead>
+                <tr>
+                  <th>流水号</th>
+                  <th>客户</th>
+                  <th>客户单号</th>
+                  <th>客户款号</th>
+                  <th>ITEMCODE</th>
+                  <th>颜色</th>
+                  <th>数量</th>
+                  <th>原价</th>
+                  <th>折扣</th>
+                  <th>客户加价</th>
+                  <th>折后价</th>
+                  <th>佣金比</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(ln, i) in previewLines" :key="i">
+                  <td>{{ serialMap(previewLines).get(ln.cust_name) }}</td>
+                  <td>{{ shortCustName(ln.cust_name) }}</td>
+                  <td><input class="cell-input" v-model="ln.cust_po" /></td>
+                  <td><input class="cell-input" v-model="ln.cust_kuanhao" /></td>
+                  <td>{{ ln.itemcode }}</td>
+                  <td><input class="cell-input" v-model="ln.color" /></td>
+                  <td><input class="cell-input cell-num" type="number" step="1" min="0" v-model.number="ln.qty" /></td>
+                  <td>{{ ln.price.toFixed(4) }}</td>
+                  <td><input class="cell-input cell-num" type="number" step="0.001" v-model.number="ln.discount" /></td>
+                  <td><input class="cell-input cell-num" type="number" step="0.001" v-model.number="ln.cust_zhekou_jiajia" /></td>
+                  <td>{{ finalPrice(ln).toFixed(2) }}</td>
+                  <td><input class="cell-input cell-num" type="number" step="0.001" v-model.number="ln.cust_yongjin_p" /></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="preview-actions">
+            <button type="button" class="btn btn-primary" @click="confirmExport">确认导出</button>
+            <button v-if="previewTarget === 'batch'" type="button" class="btn btn-import"
+              :disabled="importing" @click="importToPc">
+              {{ importing ? '导入中…' : '自动导入香江系统' }}
+            </button>
+            <button type="button" class="btn btn-cancel" @click="showPreview = false">取消</button>
+          </div>
+          <div v-if="importResult" :class="importResult.ok ? 'msg-info' : 'msg-error'"
+               style="margin-top:8px; white-space:pre-line;">
+            {{ importResult.msg }}
+          </div>
+        </div>
       </div>
 
       <!-- 五、页面说明 -->
@@ -199,8 +275,28 @@ const itemDetail = ref<Item | null>(null)
 const errorMsg = ref('')
 const infoMsg = ref('')
 
+const showPreview = ref(false)
+const previewTarget = ref<'batch' | 'coats'>('batch')
+const previewLines = ref<QuoteLine[]>([])
+const nextSeq = ref(1)
+const importing = ref(false)
+const importResult = ref<{ ok: boolean; msg: string } | null>(null)
+
 const discountForm = reactive({ discount: 0, cust_yongjin_p: 0, cust_zhekou_jiajia: 0 })
 const addForm = reactive({ cust_po: '', cust_kuanhao: '', color: '', qty: 0 })
+const coatsForm = reactive({ ship_to: '大货地址', buyer: 'XiangJiang 香江' })
+
+// 按客户名分组，同一客户共用同一流水号，从 startSeq 开始递增
+function serialMap(lines: QuoteLine[], startSeq: number = nextSeq.value): Map<string, number> {
+  const map = new Map<string, number>()
+  let seq = startSeq
+  for (const ln of lines) {
+    if (!map.has(ln.cust_name)) {
+      map.set(ln.cust_name, seq++)
+    }
+  }
+  return map
+}
 
 // 客户名前 8 个汉字截断，等价 PHP short_cust_name
 function shortCustName(name: string): string {
@@ -210,12 +306,11 @@ function shortCustName(name: string): string {
   return name
 }
 
-// 佣金方式临场算（0/2/3/5），等价 quote_order.php:869-878
-function modeCode(yjP: number, zkJj: number): number {
-  if (yjP === 0 && zkJj === 0) return 0
-  if (yjP === 0 && zkJj > 0) return 2
-  if (yjP > 0 && zkJj === 0) return 3
-  return 5
+// 折后价（给客户的最终单价）= 原价 ×(100+折扣)/100 + 客户加价，保留 2 位小数。
+// 佣金比例为内部结算用、客户不可见，不计入折后价。
+function finalPrice(ln: QuoteLine): number {
+  const base = ln.price * (100 + (ln.discount || 0)) / 100 + (ln.cust_zhekou_jiajia || 0)
+  return Math.round((base + Number.EPSILON) * 100) / 100
 }
 
 function onCustInput() {
@@ -331,20 +426,17 @@ function clearTemp() {
   infoMsg.value = '临时列表已清空'
 }
 
-async function exportExcel() {
-  if (quote.lines.length === 0) {
-    errorMsg.value = '没有临时报价行，无法导出'
-    return
-  }
-  const resp = await client.post('/quote/export', { lines: quote.lines }, { responseType: 'blob' })
-  // 从响应头解析文件名，失败则用默认
-  let filename = 'quote.xlsx'
-  const disp = resp.headers['content-disposition'] as string | undefined
+function downloadBlob(data: BlobPart, headers: Record<string, any>, fallback: string) {
+  let filename = fallback
+  const disp = headers['content-disposition'] as string | undefined
   if (disp) {
+    // 优先解析 RFC 5987 的 filename*，否则退回普通 filename
+    const mStar = /filename\*=UTF-8''([^;]+)/i.exec(disp)
     const m = /filename="?([^";]+)"?/.exec(disp)
-    if (m) filename = decodeURIComponent(m[1])
+    if (mStar) filename = decodeURIComponent(mStar[1])
+    else if (m) filename = decodeURIComponent(m[1])
   }
-  const url = window.URL.createObjectURL(new Blob([resp.data]))
+  const url = window.URL.createObjectURL(new Blob([data]))
   const a = document.createElement('a')
   a.href = url
   a.download = filename
@@ -354,18 +446,76 @@ async function exportExcel() {
   window.URL.revokeObjectURL(url)
 }
 
+async function importToPc() {
+  importing.value = true
+  importResult.value = null
+  const smap = serialMap(previewLines.value)
+  const linesWithSerial = previewLines.value.map(ln => ({ ...ln, serial_no: smap.get(ln.cust_name)! }))
+  try {
+    const { data } = await client.post('/quote/submit-to-pc', { lines: linesWithSerial }, { timeout: 120000 })
+    const results: any[] = data.results || []
+    const allOk = results.every((r: any) => r.ok)
+    const msgs = results.map((r: any) =>
+      r.ok
+        ? `✓ ${r.cust_name}（流水号 ${r.order_po}）：${r.submit?.err ?? '录入成功'}`
+        : `✗ ${r.cust_name}：${r.message ?? JSON.stringify(r.submit)}`
+    )
+    importResult.value = { ok: allOk, msg: msgs.join('\n') }
+  } catch (e: any) {
+    importResult.value = { ok: false, msg: e?.response?.data?.detail || '提交失败，请检查网络或 PC 端配置' }
+  } finally {
+    importing.value = false
+  }
+}
+
+function openPreview(target: 'batch' | 'coats') {
+  errorMsg.value = ''
+  if (quote.lines.length === 0) {
+    errorMsg.value = '没有临时报价行，无法导出'
+    return
+  }
+  previewTarget.value = target
+  previewLines.value = quote.lines.map(ln => ({ ...ln }))
+  importResult.value = null
+  showPreview.value = true
+}
+
+async function confirmExport() {
+  errorMsg.value = ''
+  showPreview.value = false
+  const smap = serialMap(previewLines.value)
+  const linesWithSerial = previewLines.value.map(ln => ({ ...ln, serial_no: smap.get(ln.cust_name)! }))
+  try {
+    if (previewTarget.value === 'batch') {
+      const resp = await client.post('/quote/export-batch', { lines: linesWithSerial }, { responseType: 'blob', timeout: 60000 })
+      downloadBlob(resp.data, resp.headers, '批量导入.xlsx')
+    } else {
+      const resp = await client.post(
+        '/quote/export-coats',
+        { lines: linesWithSerial, ship_to: coatsForm.ship_to, buyer: coatsForm.buyer },
+        { responseType: 'blob', timeout: 60000 },
+      )
+      downloadBlob(resp.data, resp.headers, '高士下单.xlsx')
+    }
+  } catch (e: any) {
+    errorMsg.value = e?.response?.data?.detail || '导出失败'
+  }
+}
+
 function onLogout() {
   auth.logout()
   router.push({ name: 'login' })
 }
 
 onMounted(async () => {
-  const [cust, items] = await Promise.all([
+  const [cust, items, seq] = await Promise.all([
     client.get('/customers'),
     client.get('/items'),
+    client.get('/quote/next-seq'),
   ])
   custList.value = cust.data
   itemList.value = items.data
+  nextSeq.value = seq.data.next_seq
 })
 </script>
 
@@ -400,6 +550,7 @@ onMounted(async () => {
 .qo-btn-row { margin-top:10px; text-align:left; }
 .btn { display:inline-block; padding:8px 12px; border-radius:4px; border:none; font-size:14px; margin-right:8px; }
 .btn-primary { background:#0052cc; color:#fff; }
+.btn-green2 { background:#28a745; color:#fff; }
 .btn-danger { background:#d93025; color:#fff; }
 .table-wrap { overflow-x:auto; margin-top:6px; }
 .temp-table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -410,4 +561,19 @@ onMounted(async () => {
 .msg-error { background:#fce8e6; color:#c5221f; padding:8px 10px; font-size:13px; margin-bottom:10px; border-radius:4px; }
 .msg-info { background:#e8f0fe; color:#174ea6; padding:8px 10px; font-size:13px; margin-bottom:10px; border-radius:4px; }
 .small-text { font-size:12px; color:#666; }
+/* 预览弹层 */
+.preview-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:100; display:flex; align-items:flex-start; justify-content:center; padding:20px 0; overflow-y:auto; }
+.preview-dialog { background:#fff; border-radius:8px; width:98vw; max-width:1100px; padding:16px; box-shadow:0 4px 24px rgba(0,0,0,0.2); }
+.preview-title { font-size:15px; font-weight:bold; margin-bottom:4px; }
+.preview-hint { font-size:12px; color:#888; font-weight:normal; margin-left:6px; }
+.preview-scroll { overflow-x:auto; margin:10px 0; }
+.preview-table { width:100%; border-collapse:collapse; font-size:12px; }
+.preview-table th, .preview-table td { border:1px solid #ddd; padding:3px 4px; text-align:center; white-space:nowrap; }
+.preview-table th { background:#f0f4ff; }
+.cell-input { width:80px; padding:2px 4px; border:1px solid #bbb; border-radius:3px; font-size:12px; text-align:center; }
+.cell-num { width:60px; }
+.preview-actions { margin-top:12px; display:flex; gap:10px; }
+.btn-cancel { background:#888; color:#fff; }
+.btn-import { background:#e67e22; color:#fff; }
+.btn-import:disabled { opacity:0.6; }
 </style>

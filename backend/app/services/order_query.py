@@ -71,6 +71,18 @@ def search_orders(
             o.order_status,
             c.cust_name,
             c.cust_short,
+            MAX(COALESCE(dm.recv_man_name,
+                (SELECT dm2.recv_man_name FROM dianzi_miandan dm2
+                 WHERE dm2.cust_name = c.cust_name
+                 ORDER BY dm2.id DESC LIMIT 1))) AS recv_man,
+            MAX(COALESCE(dm.cust_call,
+                (SELECT dm2.cust_call FROM dianzi_miandan dm2
+                 WHERE dm2.cust_name = c.cust_name
+                 ORDER BY dm2.id DESC LIMIT 1))) AS recv_call,
+            MAX(COALESCE(dm.cust_addr,
+                (SELECT dm2.cust_addr FROM dianzi_miandan dm2
+                 WHERE dm2.cust_name = c.cust_name
+                 ORDER BY dm2.id DESC LIMIT 1))) AS cust_address,
             (
                 SELECT IFNULL(SUM(d2.number), 0)
                 FROM order_detail d2
@@ -81,9 +93,10 @@ def search_orders(
             MAX(cw.chuhuo_date) AS last_chuhuo_date,
             GROUP_CONCAT(DISTINCT cw.wuliu_id ORDER BY cw.chuhuo_date SEPARATOR ',') AS wuliu_ids
         FROM orders o
-        LEFT JOIN customers    c  ON o.cust_id   = c.cust_id
-        LEFT JOIN order_detail d  ON o.order_id  = d.order_id
-        LEFT JOIN chuhuo_wuliu cw ON cw.order_id = o.order_id
+        LEFT JOIN customers    c  ON o.cust_id    = c.cust_id
+        LEFT JOIN order_detail d  ON d.order_id   = o.order_id
+        LEFT JOIN chuhuo_wuliu cw ON cw.order_id  = o.order_id
+        LEFT JOIN dianzi_miandan dm ON dm.id       = cw.miandan_id
         """
         + where
         + """
@@ -106,6 +119,9 @@ def search_orders(
                 "status_text": status_label(r["order_status"]),
                 "cust_name": r["cust_name"] or "",
                 "cust_short": r["cust_short"] or "",
+                "recv_man": r["recv_man"] or "",
+                "recv_call": r["recv_call"] or "",
+                "cust_address": r["cust_address"] or "",
                 "total_qty": int(r["total_qty"]) if r["total_qty"] is not None else 0,
                 "cust_po_list": r["cust_po_list"] or "",
                 "cust_kuanhao_list": r["cust_kuanhao_list"] or "",
