@@ -58,3 +58,27 @@ class MeResponse(BaseModel):
 @router.get("/me", response_model=MeResponse)
 def me(user: CurrentUser = Depends(get_current_user)) -> MeResponse:
     return MeResponse(username=user.username, realname=user.realname, role=user.role)
+
+
+class WechatLoginRequest(BaseModel):
+    openid: str
+
+
+_WECHAT_OPENID = "oORbK52yxJyuymhNgGDCpgC4P85o"
+
+
+@router.post("/wechat", response_model=LoginResponse)
+def wechat_login(body: WechatLoginRequest) -> LoginResponse:
+    """微信免登录：硬编码 openid 直接签发 JWT。"""
+    if body.openid != _WECHAT_OPENID:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未授权的微信用户")
+    token = create_access_token(
+        subject="wechat_user",
+        extra={"realname": "微信用户", "role": "user"},
+    )
+    return LoginResponse(
+        access_token=token,
+        username="wechat_user",
+        realname="微信用户",
+        role="user",
+    )

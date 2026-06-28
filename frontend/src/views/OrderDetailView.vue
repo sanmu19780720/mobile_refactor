@@ -1,54 +1,45 @@
 <template>
-  <div>
-    <div class="header">
-      <div class="header-title">订单明细：{{ head.order_po }}</div>
-      <div class="header-user">
-        <router-link to="/order-search">返回查询</router-link>
-        <router-link to="/">菜单</router-link>
-      </div>
+  <div class="page">
+    <div class="topbar">
+      <router-link to="/order-search" class="topbar-back">← 返回</router-link>
+      <div class="topbar-title">订单明细</div>
+      <router-link to="/" class="topbar-home">菜单</router-link>
     </div>
 
-    <div class="container">
-      <div v-if="error" class="no-data">{{ error }}</div>
+    <div class="body">
+      <div v-if="error" class="empty">{{ error }}</div>
 
       <template v-else>
-        <div class="box">
-          <div class="line"><span class="label">客户：</span>{{ custDisplay }}</div>
-          <div class="line"><span class="label">订单号：</span>{{ head.order_po }}</div>
-          <div class="line"><span class="label">下单日期：</span>{{ head.order_input_date }}</div>
-          <div class="line"><span class="label">交期：</span>{{ head.order_expect_date }}</div>
-        </div>
-
-        <div class="box">
-          <div class="line title">明细行</div>
-
-          <div v-if="details.length === 0" class="line">该订单暂无明细记录。</div>
-
-          <div v-for="(d, i) in details" :key="i" class="detail-item">
-            <div class="line">
-              <span class="tag">{{ d.itemcode }}</span>{{ d.itemname }}
-            </div>
-            <div class="line">
-              <span class="label">货号：</span>{{ d.huohao }}
-              &nbsp;&nbsp;<span class="label">粗度：</span>{{ d.cudu }}
-            </div>
-            <div class="line">
-              <span class="label">颜色：</span>{{ d.color }}
-              &nbsp;&nbsp;<span class="label">数量：</span>{{ d.number }}
-            </div>
-            <div class="line">
-              <span class="label">单价：</span>{{ d.sale_price }}
-              &nbsp;&nbsp;<span class="label">金额：</span>{{ d.sale_value }}
-            </div>
-            <div class="line">
-              <span class="label">客户款号：</span>{{ d.cust_kuanhao }}
-              &nbsp;&nbsp;<span class="label">客户PO：</span>{{ d.cust_po }}
-            </div>
+        <div class="card">
+          <div class="card-title">基本信息</div>
+          <div class="info-grid">
+            <div class="info-item"><span class="lbl">客户</span><span class="val">{{ custDisplay }}</span></div>
+            <div class="info-item"><span class="lbl">订单号</span><span class="val mono">{{ head.orders_po }}</span></div>
+            <div class="info-item"><span class="lbl">下单日期</span><span class="val">{{ head.order_input_date }}</span></div>
+            <div class="info-item"><span class="lbl">交期</span><span class="val">{{ head.order_expect_date }}</span></div>
           </div>
         </div>
 
-        <div class="back-link">
-          <router-link to="/order-search">&laquo; 返回订单列表</router-link>
+        <div class="card">
+          <div class="card-title">明细行 <span class="badge">{{ details.length }} 条</span></div>
+          <div v-if="details.length === 0" class="empty-inline">暂无明细记录</div>
+
+          <div v-for="(d, i) in details" :key="i" class="detail-row">
+            <div class="detail-top">
+              <span class="detail-code">{{ d.itemcode }}</span>
+              <span class="detail-name">{{ d.itemname }}</span>
+            </div>
+            <div class="detail-grid">
+              <div><span class="lbl">货号</span><span>{{ d.huohao }}</span></div>
+              <div><span class="lbl">粗度</span><span>{{ d.cudu }}</span></div>
+              <div><span class="lbl">颜色</span><span>{{ d.color }}</span></div>
+              <div><span class="lbl">数量</span><span class="bold">{{ d.number }}</span></div>
+              <div><span class="lbl">单价</span><span class="price">¥{{ d.sale_price }}</span></div>
+              <div><span class="lbl">金额</span><span class="price bold">¥{{ d.sale_value }}</span></div>
+              <div><span class="lbl">客户款号</span><span>{{ d.cust_kuanhao || '—' }}</span></div>
+              <div><span class="lbl">客户PO</span><span>{{ d.cust_po || '—' }}</span></div>
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -78,10 +69,7 @@ const custDisplay = computed(() => {
 
 onMounted(async () => {
   const orderId = Number(route.params.orderId)
-  if (!orderId || orderId <= 0) {
-    error.value = '参数错误：缺少 order_id'
-    return
-  }
+  if (!orderId || orderId <= 0) { error.value = '参数错误：缺少 order_id'; return }
   try {
     const { data } = await client.get(`/orders/${orderId}`)
     head.value = data.head
@@ -93,19 +81,54 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.header { background:#003366; color:#fff; padding:10px; display:flex; justify-content:space-between; align-items:center; }
-.header-title { font-size:16px; }
-.header-user { font-size:12px; text-align:right; }
-.header-user a { color:#ffeb3b !important; margin-left:5px; }
-.container { padding:10px; }
-.box { background:#fff; border-radius:8px; padding:10px; margin-bottom:10px; border:1px solid #e0e0e0; font-size:13px; }
-.line { margin-bottom:4px; color:#555; }
-.line.title { font-weight:bold; margin-bottom:8px; }
-.line .label { color:#888; }
-.detail-item { border-top:1px dashed #eee; padding-top:6px; margin-top:6px; }
-.detail-item:first-of-type { border-top:none; padding-top:0; margin-top:0; }
-.tag { font-size:11px; padding:1px 4px; border-radius:3px; background:#eee; margin-right:4px; }
-.back-link { margin-top:8px; }
-.back-link a { font-size:13px; color:#03a9f4; }
-.no-data { background:#fff; padding:14px; border-radius:8px; color:#888; }
+.page { min-height: 100vh; background: #f4f6f9; }
+
+.topbar {
+  background: #003366; color: #fff; padding: 12px 16px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.topbar-title { font-size: 16px; font-weight: 600; }
+.topbar-back, .topbar-home { color: #ffeb3b; font-size: 13px; text-decoration: none; }
+
+.body { padding: 12px; }
+
+.card {
+  background: #fff; border-radius: 10px;
+  padding: 14px 16px; margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+}
+.card-title {
+  font-size: 14px; font-weight: 600; color: #003366;
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.badge {
+  background: #e8f0fe; color: #0052cc;
+  font-size: 11px; padding: 2px 7px; border-radius: 10px; font-weight: 500;
+}
+
+.info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.info-item { display: flex; flex-direction: column; gap: 2px; }
+.lbl { font-size: 11px; color: #999; }
+.val { font-size: 14px; color: #222; }
+.mono { font-family: monospace; font-size: 13px; }
+
+.detail-row {
+  border-top: 1px dashed #eee; padding-top: 12px; margin-top: 12px;
+}
+.detail-row:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.detail-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.detail-code {
+  background: #e8f0fe; color: #0052cc;
+  font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: 600;
+}
+.detail-name { font-size: 13px; color: #333; }
+.detail-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; font-size: 13px;
+}
+.detail-grid > div { display: flex; flex-direction: column; gap: 1px; }
+.detail-grid .lbl { font-size: 11px; color: #999; }
+.bold { font-weight: 600; }
+.price { color: #c0392b; font-weight: 500; }
+
+.empty, .empty-inline { color: #999; font-size: 13px; padding: 10px 0; }
 </style>

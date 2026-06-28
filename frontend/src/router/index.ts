@@ -6,6 +6,7 @@ import MenuView from '@/views/MenuView.vue'
 import OrderSearchView from '@/views/OrderSearchView.vue'
 import OrderDetailView from '@/views/OrderDetailView.vue'
 import QuoteOrderView from '@/views/QuoteOrderView.vue'
+import NewCustomerQuoteView from '@/views/NewCustomerQuoteView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
@@ -13,6 +14,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/order-search', name: 'order-search', component: OrderSearchView },
   { path: '/order-detail/:orderId', name: 'order-detail', component: OrderDetailView },
   { path: '/quote-order', name: 'quote-order', component: QuoteOrderView },
+  { path: '/new-customer-quote', name: 'new-customer-quote', component: NewCustomerQuoteView },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
