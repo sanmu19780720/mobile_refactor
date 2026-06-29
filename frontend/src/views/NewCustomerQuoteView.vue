@@ -37,10 +37,10 @@
         </div>
 
         <div class="field">
-          <label>折扣</label>
+          <label>折扣（负数或零，如 -15 表示八五折）</label>
           <div class="discount-row">
-            <input v-model.number="discount" placeholder="如 0.85" type="number" min="0.01" max="1" step="0.01" />
-            <span v-if="discount > 0 && discount <= 1" class="rate-badge">
+            <input v-model.number="discount" placeholder="如 -15" type="number" step="0.1" />
+            <span v-if="discountValid" class="rate-badge">
               利率 {{ rateDisplay }}
             </span>
           </div>
@@ -54,7 +54,7 @@
       <!-- 报价单 -->
       <div v-if="quoteLines.length" class="card">
         <div class="card-title">报价单 — {{ custName }}</div>
-        <div class="quote-meta">折扣：{{ (discount * 100).toFixed(0) }}%&nbsp;&nbsp;利率：{{ rateDisplay }}</div>
+        <div class="quote-meta">折扣：{{ discount }}&nbsp;&nbsp;折后成交比：{{ rateDisplay }}</div>
 
         <table class="quote-table">
           <thead>
@@ -98,13 +98,15 @@ const saving = ref(false)
 const saved = ref(false)
 const saveError = ref('')
 
+// 折后价 = price * (100 + discount) / 100，与 QuoteOrderView.finalPrice 逻辑一致
+const discountValid = computed(() => discount.value !== null && discount.value !== undefined && discount.value <= 0)
 const rateDisplay = computed(() => {
-  if (!discount.value || discount.value <= 0 || discount.value > 1) return ''
-  return ((1 - discount.value) * 100).toFixed(1) + '%'
+  if (!discountValid.value) return ''
+  return ((100 + discount.value) / 100 * 100).toFixed(1) + '%'
 })
 
 const canGenerate = computed(() =>
-  selectedItem.value !== null && custName.value.trim() !== '' && discount.value > 0 && discount.value <= 1
+  selectedItem.value !== null && custName.value.trim() !== '' && discountValid.value
 )
 
 async function onHuohaoInput() {
@@ -124,7 +126,7 @@ function generate() {
   if (!selectedItem.value) return
   saved.value = false
   saveError.value = ''
-  const finalPrice = (selectedItem.value.price * discount.value).toFixed(2)
+  const finalPrice = (selectedItem.value.price * (100 + discount.value) / 100).toFixed(2)
   quoteLines.value = [{
     huohao: selectedItem.value.huohao,
     length: selectedItem.value.length,
